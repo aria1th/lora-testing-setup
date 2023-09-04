@@ -1,0 +1,11 @@
+
+*.safetensors
+example_lora
+*.pyc
+*.pyo
+*.pyd
+*.json
+*.lock
+*.txt
+*.safetensors
+*.ckpt
