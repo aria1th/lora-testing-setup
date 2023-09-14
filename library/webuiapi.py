@@ -218,6 +218,9 @@ class WebUIApi:
             self.set_auth(username, password)
         else:
             self.check_controlnet()
+            
+        # test
+        
 
     def check_controlnet(self):
         try:
@@ -599,6 +602,9 @@ class WebUIApi:
         return self.session.post(target_url, files=files, data=data)
         
     def upload_dynamic_prompts(self, dynamic_prompts_file_path, dynamic_prompts_target_path:str=""):
+        """
+        Upload dynamic prompts to server.
+        """
         # /upload/dynamic_prompts
         
         target_url = self.real_url + "/upload_dynamic_prompts"
@@ -610,6 +616,106 @@ class WebUIApi:
         if dynamic_prompts_target_path != "":
             data["path"] = dynamic_prompts_target_path
         return self.session.post(target_url, files=files, data=data)
+    
+    def check_uploader_ping(self, target_api_address:str):
+        # ping /uploader/ping to check if uploader is running
+        target_api_ping_url = target_api_address + "/uploader/ping"
+        if target_api_address == "":
+            raise RuntimeError("target_api_address must be specified")
+        result = self.session.get(target_api_ping_url)
+        # check response
+        if result.status_code != 200:
+            result_error = result.text
+            raise RuntimeError("target_api_address is not running uploader, " + str(result.status_code) + " " + result_error)
+        
+    def request_download_controlnets(self, model_type:str = 'v11'):
+        # model type can be 'v11' or 'xl'
+        # /download_controlnet_models/v11
+        # curl -X POST http://127.0.0.1:7860/download_controlnet_models/v11
+        target_url = self.real_url + "/download_controlnet_models/" + model_type
+        return self.session.post(target_url) # no data
+        
+        
+    def send_single_sync_request(self, target_api_address:str, target_auth:str, model_type:str, model_path:str=""):
+        """
+        Sends single model sync request to target_api_address
+        """
+        if model_type not in ["sd_model", "lora_model", "vae_model", "embedding"]:
+            raise RuntimeError("model_type must be one of sd_model, lora_model, vae_model, embedding, but given " + model_type)
+        if target_api_address == "":
+            raise RuntimeError("target_api_address must be specified")
+        target_url = self.real_url + "/sync/" + model_type
+        data = {}
+        if target_api_address != "":
+            data["target_api_address"] = target_api_address
+        if target_auth != "":
+            data["auth"] = target_auth
+        if model_path != "":
+            data["model_path"] = model_path
+        else:
+            raise RuntimeError("model_path must be specified")
+        return self.session.post(target_url, data=data)
+    
+    def send_model_type_sync_request(self, target_api_address:str, target_auth:str, model_type:str):
+        """
+        Sends model type sync request to target_api_address
+        """
+        # curl -X POST -F "target_api_address=http://test.api.address/" http://127.0.0.1:7860/sync/all_sd_models
+        if model_type not in ["all_sd_models", "all_lora_models", "all_vae_models", "all_models"]:
+            raise RuntimeError("model_type must be one of all_sd_models, all_lora_models, all_vae_models, all_models, but given " + model_type)
+        target_url = self.real_url + "/sync/" + model_type
+        data = {}
+        if target_api_address != "":
+            data["target_api_address"] = target_api_address
+        if target_auth != "":
+            data["auth"] = target_auth
+        return self.session.post(target_url, data=data)
+    
+    def send_lora_sync_request(self, target_api_address:str, target_auth:str, model_path:str=""):
+        """
+        Sends lora sync request to target_api_address
+        """
+        # curl -X POST -F "target_api_address=http://test.api.address/" -F "model_path=test/test.safetensors" -F"auth=username:password" http://
+        return self.send_single_sync_request(target_api_address, target_auth, "lora_model", model_path)
+    
+    def send_sd_sync_request(self, target_api_address:str, target_auth:str, model_path:str=""):
+        """
+        Sends sd sync request to target_api_address
+        """
+        return self.send_single_sync_request(target_api_address, target_auth, "sd_model", model_path)
+    
+    def send_vae_sync_request(self, target_api_address:str, target_auth:str, model_path:str=""):
+        """
+        Sends vae sync request to target_api_address
+        """
+        return self.send_single_sync_request(target_api_address, target_auth, "vae_model", model_path)
+    def send_embedding_sync_request(self, target_api_address:str, target_auth:str, model_path:str=""):
+        """
+        Sends embedding sync request to target_api_address
+        """
+        return self.send_single_sync_request(target_api_address, target_auth, "embedding", model_path)
+    def send_all_sd_models_sync_request(self, target_api_address:str, target_auth:str):
+        """
+        Sends all_sd_models sync request to target_api_address
+        """
+        return self.send_model_type_sync_request(target_api_address, target_auth, "all_sd_models")
+    def send_all_lora_models_sync_request(self, target_api_address:str, target_auth:str):
+        """
+        Sends all_lora_models sync request to target_api_address
+        """
+        return self.send_model_type_sync_request(target_api_address, target_auth, "all_lora_models")
+    def send_all_vae_models_sync_request(self, target_api_address:str, target_auth:str):
+        """
+        Sends all_vae_models sync request to target_api_address
+        """
+        return self.send_model_type_sync_request(target_api_address, target_auth, "all_vae_models")
+    def send_all_models_sync_request(self, target_api_address:str, target_auth:str):
+        """
+        Sends all_models sync request to target_api_address
+        """
+        return self.send_model_type_sync_request(target_api_address, target_auth, "all_models")
+        
+    
     
     def remove_sd_model(self, sd_target_path:str=""):
         # /remove_sd_model
