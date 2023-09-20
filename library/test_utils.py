@@ -195,11 +195,13 @@ def test_mask(instance,
     wait_for_result(result, result_container)
     return result_container[0]
 
-def test_and_save(args_1:List[str] = list(), args_2:List[str] = list(), suffix = "", filepath = './examples',
-                mask_path:str = "",
-                controlnet_path:str = "",
-                prompts:dict = dict(),
-                return_images:bool = False):
+def test_and_save(instance:WebUIApi,
+        args_1:List[str] = list(), args_2:List[str] = list(), suffix = "", filepath = './examples',
+        mask_path:str = "",
+        controlnet_path:str = "",
+        prompts:dict = dict(),
+        return_images:bool = False
+    ):
     """
     Tests mask generation and save result to filepath
     """
@@ -212,7 +214,8 @@ def test_and_save(args_1:List[str] = list(), args_2:List[str] = list(), suffix =
         for prompt_2 in args_2:
             p1 = prompts[prompt_1]
             p2 = prompts[prompt_2]
-            result = test_mask(p1, p2,
+            result = test_mask(instance, 
+                               p1, p2,
                                mask_path = mask_path,
                                controlnet_path = controlnet_path,
                                ).get_image()
