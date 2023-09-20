@@ -1,3 +1,4 @@
+from typing import List
 from library.webuiapi import WebUIApi, QueuedTaskResult, ControlNetUnit, raw_b64_img
 import os
 import time
@@ -117,17 +118,17 @@ def concat_image_horizontally(img_list:list):
 
   
 def test_mask(instance,
-            prompt_1_arg = "1boy",
-            prompt_2_arg = "1girl",
+            prompt_1_arg:str = "1boy",
+            prompt_2_arg:str = "1girl",
             lora_stop_steps = (10, 10),
-            extra_args = {},
-            mask_path = "test_mask.png",
-            controlnet_path = "test_controlnet.png",
-            controlnet_preprocessor = "none",
-            controlnet_model = "control_v11p_sd15_openpose [cab727d4]",
-            base_prompt = "masterpiece, night, line art, simple background, street",
-            common_prompt = "(best-quality:0.8), detailed face, perfect anime illustration",
-            negative_prompt = "(worst quality:0.8), verybadimagenegative_v1.3, easynegative, (surreal:0.8), (modernism:0.8), (art deco:0.8), (art nouveau:0.8)",
+            extra_args:dict = dict(),
+            mask_path:str = "test_mask.png",
+            controlnet_path:str = "test_controlnet.png",
+            controlnet_preprocessor:str = "none",
+            controlnet_model:str = "control_v11p_sd15_openpose [cab727d4]",
+            base_prompt:str = "masterpiece, night, line art, simple background, street",
+            common_prompt:str = "(best-quality:0.8), detailed face, perfect anime illustration",
+            negative_prompt:str = "(worst quality:0.8), verybadimagenegative_v1.3, easynegative, (surreal:0.8), (modernism:0.8), (art deco:0.8), (art nouveau:0.8)",
         ):
     """
     Tests regional prompter with mask mode.
@@ -148,7 +149,8 @@ def test_mask(instance,
         'width':768,
         'height':1152,
         'hr_scale':1.3,
-        'denoising_strength':0.6
+        'denoising_strength':0.6,
+        #'seed':1003,
     }
     extra_args_base.update(extra_args)
     result = instance.txt2img_task(
@@ -193,10 +195,11 @@ def test_mask(instance,
     wait_for_result(result, result_container)
     return result_container[0]
 
-def test_and_save(args_1:list = [], args_2:list = [], suffix = "", filepath = './examples',
+def test_and_save(args_1:List[str] = list(), args_2:List[str] = list(), suffix = "", filepath = './examples',
                 mask_path:str = "",
                 controlnet_path:str = "",
-                prompts:dict = {}):
+                prompts:dict = dict(),
+                return_images:bool = False):
     """
     Tests mask generation and save result to filepath
     """
@@ -204,6 +207,7 @@ def test_and_save(args_1:list = [], args_2:list = [], suffix = "", filepath = '.
     assert os.path.exists(controlnet_path), "controlnet_path does not exist"
     if not os.path.exists(filepath):
         os.makedirs(filepath, exist_ok=True)
+    images_holder = []
     for prompt_1 in args_1:
         for prompt_2 in args_2:
             p1 = prompts[prompt_1]
@@ -213,4 +217,7 @@ def test_and_save(args_1:list = [], args_2:list = [], suffix = "", filepath = '.
                                controlnet_path = controlnet_path,
                                ).get_image()
             result.save(os.path.join(filepath, f"{prompt_1}_{prompt_2}_{suffix}.png"))
-            
+            if return_images:
+                images_holder.append(result)
+    if return_images:
+        return images_holder
