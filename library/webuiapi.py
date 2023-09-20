@@ -425,7 +425,7 @@ class WebUIApi:
         hr_resize_x=0,
         hr_resize_y=0,
         prompt="",
-        styles=[],
+        styles=list(),
         seed=-1,
         subseed=-1,
         subseed_strength=0.0,
@@ -448,18 +448,23 @@ class WebUIApi:
         s_tmax=0,
         s_tmin=0,
         s_noise=1,
-        override_settings={},
+        override_settings=dict(),
         override_settings_restore_afterwards=True,
         script_args=None,  # List of arguments for the script "script_name"
         script_name=None,
         send_images=True,
         save_images=False,
-        alwayson_scripts={},
-        controlnet_units: List[ControlNetUnit] = [],
+        alwayson_scripts=dict(),
+        controlnet_units: List[ControlNetUnit] = list(),
         sampler_index=None,  # deprecated: use sampler_name
         use_deprecated_controlnet=False,
         use_async=False,
+        checkpoint_name=None,
     ):
+        """
+        This function is similar to txt2img, but it returns a QueuedTaskResult instead of WebUIApiResult.
+        You can also pass checkpoint_name to use a specific checkpoint.
+        """
         if sampler_index is None:
             sampler_index = self.default_sampler
         if sampler_name is None:
@@ -511,6 +516,8 @@ class WebUIApi:
             "save_images": save_images,
             "alwayson_scripts": alwayson_scripts,
         }
+        if checkpoint_name is not None:
+            payload["checkpoint_name"] = checkpoint_name
 
         if use_deprecated_controlnet:
             raise RuntimeError("use_deprecated_controlnet is not supported for txt2img_task")
@@ -938,6 +945,7 @@ class WebUIApi:
         controlnet_units: List[ControlNetUnit] = [],
         use_deprecated_controlnet=False,
         use_async=False,
+        checkpoint_name=None,
     ):
         if sampler_name is None:
             sampler_name = self.default_sampler
@@ -993,6 +1001,8 @@ class WebUIApi:
             "save_images": save_images,
             "alwayson_scripts": alwayson_scripts,
         }
+        if checkpoint_name is not None:
+            payload["checkpoint_name"] = checkpoint_name
         if mask_image is not None:
             payload["mask"] = b64_img(mask_image)
 
