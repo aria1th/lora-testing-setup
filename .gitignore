@@ -9,3 +9,5 @@ example_lora
 *.txt
 *.safetensors
 *.ckpt
+debug-notebook.ipynb
+*.png
