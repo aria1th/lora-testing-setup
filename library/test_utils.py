@@ -5,7 +5,9 @@ import time
 from PIL import Image
 from threading import Thread
 
+# image open functions
 def open_controlnet_image(path:str):
+    # open controlnet images, TODO : open json file as image (openpose)
     control_ref_img = Image.open(path)
     control_ref_img = control_ref_img.convert("RGB")
     return control_ref_img
@@ -14,6 +16,41 @@ def open_mask_image(path:str):
     mask_ref_img = Image.open(path)
     mask_ref_img = mask_ref_img.convert("RGB")
     return mask_ref_img
+
+# helper functions
+def wait_for_result(result:QueuedTaskResult, result_list:list,
+                    check_interval:int=1):
+    """wait for result to finish"""
+    # function for thread
+    while not result.is_finished():
+        time.sleep(check_interval)
+    result_list.append(result)
+
+def concat_horizontally(*images):
+    # get max height
+    # get max width
+    # create new image
+    max_height = max([img.size[1] for img in images])
+    total_width = sum([img.size[0] for img in images])
+    new_img = Image.new('RGB', (total_width, max_height))
+    x_offset = 0
+    for img in images:
+        new_img.paste(img, (x_offset, 0))
+        x_offset += img.size[0]
+    return new_img
+
+def concat_vertically(*images):
+    # get max height
+    # get max width
+    # create new image
+    max_width = max([img.size[0] for img in images])
+    total_height = sum([img.size[1] for img in images])
+    new_img = Image.new('RGB', (max_width, total_height))
+    y_offset = 0
+    for img in images:
+        new_img.paste(img, (0, y_offset))
+        y_offset += img.size[1]
+    return new_img
 
 class InstanceHolder:
     def __init__(self, instance:WebUIApi):
@@ -473,40 +510,3 @@ class InstanceHolder:
         if return_images and len(result_container) == 0:
             raise ValueError("No images generated, check if mask_path and controlnet_path exists")
         return result_container
-    
-    
-    
-# helper functions
-def wait_for_result(result:QueuedTaskResult, result_list:list,
-                    check_interval:int=1):
-    """wait for result to finish"""
-    # function for thread
-    while not result.is_finished():
-        time.sleep(check_interval)
-    result_list.append(result)
-
-def concat_horizontally(*images):
-    # get max height
-    # get max width
-    # create new image
-    max_height = max([img.size[1] for img in images])
-    total_width = sum([img.size[0] for img in images])
-    new_img = Image.new('RGB', (total_width, max_height))
-    x_offset = 0
-    for img in images:
-        new_img.paste(img, (x_offset, 0))
-        x_offset += img.size[0]
-    return new_img
-
-def concat_vertically(*images):
-    # get max height
-    # get max width
-    # create new image
-    max_width = max([img.size[0] for img in images])
-    total_height = sum([img.size[1] for img in images])
-    new_img = Image.new('RGB', (max_width, total_height))
-    y_offset = 0
-    for img in images:
-        new_img.paste(img, (0, y_offset))
-        y_offset += img.size[1]
-    return new_img
