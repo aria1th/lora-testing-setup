@@ -99,7 +99,7 @@ class QueuedTaskResult:
                 if result_response.status_code != 200:
                     raise RuntimeError(f"task id {self.task_id} is not found in queue or results, " +str(result_response.status_code), result_response.text)
                 if result_response.json().get('success', False) == False:
-                    return False
+                    raise RuntimeError(f"task id {self.task_id} has failed, " +str(result_response.status_code), result_response.text)
                 self.image = result_response.json()['data'][0]['image']
                 self.terminated = True
                 self.task_address = ""

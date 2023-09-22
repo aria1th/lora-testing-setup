@@ -52,6 +52,10 @@ def concat_vertically(*images):
         y_offset += img.size[1]
     return new_img
 
+def generate_animated_gif(images:List[Image.Image], filename:str, duration:int=100):
+    # generate animated gif
+    images[0].save(filename, save_all=True, append_images=images[1:], duration=duration, loop=0)
+
 class InstanceHolder:
     def __init__(self, instance:WebUIApi):
         self.instance = instance
