@@ -178,7 +178,9 @@ class InstanceHolder:
             "LoRA in negative textencoder" : "0",
             "LoRA in negative U-net" : "0",
             "threshold" : "0",
-            "Use Base Prompt" : False
+            "Use Base Prompt" : False,
+            "Use Common Prompt" : False,
+            "Use Common Negative Prompt" : False,
         }
         regional_prompter_base_args.update(regional_prompter_args or dict())
         extra_args_base.update(extra_args)
@@ -205,8 +207,8 @@ class InstanceHolder:
                         regional_prompter_base_args["Divide Ratio"], # Divide Ratio
                         regional_prompter_base_args["Base Ratio"], # Base Ratio
                         regional_prompter_base_args["Use Base Prompt"], # Use base prompt
-                        False, # Use common prompt
-                        False, # Use common negative prompt
+                        regional_prompter_base_args["Use Common Prompt"], # Use common prompt
+                        regional_prompter_base_args["Use Common Negative Prompt"], # Use common negative prompt
                         "Latent", # Attention, Latent
                         False, # disable convert 'AND' to 'BREAK'
                         regional_prompter_base_args["LoRA in negative textencoder"], # LoRA in negative textencoder
@@ -268,7 +270,9 @@ class InstanceHolder:
             "LoRA in negative textencoder" : "0",
             "LoRA in negative U-net" : "0",
             "threshold" : "0",
-            "Use Base Prompt" : False
+            "Use Base Prompt" : False,
+            "Use Common Prompt" : False,
+            "Use Common Negative Prompt" : False,
         }
         regional_prompter_base_args.update(regional_prompter_args or dict())
         extra_args_base.update(extra_args)
@@ -295,8 +299,8 @@ class InstanceHolder:
                         regional_prompter_base_args["Divide Ratio"], # Divide Ratio
                         regional_prompter_base_args["Base Ratio"], # Base Ratio
                         regional_prompter_base_args["Use Base Prompt"], # Use base prompt
-                        False, # Use common prompt
-                        False, # Use common negative prompt
+                        regional_prompter_base_args["Use Common Prompt"], # Use common prompt
+                        regional_prompter_base_args["Use Common Negative Prompt"], # Use common negative prompt
                         "Latent", # Attention, Latent
                         False, # disable convert 'AND' to 'BREAK'
                         regional_prompter_base_args["LoRA in negative textencoder"], # LoRA in negative textencoder
@@ -328,7 +332,6 @@ class InstanceHolder:
         """
         Tests mask generation and save result to filepath
         """
-        instance = self.instance
         assert os.path.exists(mask_path), "mask_path does not exist"
         assert os.path.exists(controlnet_path), "controlnet_path does not exist"
         if not os.path.exists(filepath):
@@ -373,7 +376,6 @@ class InstanceHolder:
         """
         Tests division generation and save result to filepath
         """
-        instance = self.instance
         assert os.path.exists(controlnet_path), "controlnet_path does not exist"
         if not os.path.exists(filepath):
             os.makedirs(filepath, exist_ok=True)
