@@ -172,7 +172,7 @@ class InstanceHolder:
             #'seed':1003,
         }
         regional_prompter_base_args = {
-            "Division Mode" : "Horizontal",
+            "Division Mode" : "Columns",
             "Divide Ratio" : "1, 1",
             "Base Ratio" : "0.2",
             "LoRA in negative textencoder" : "0",
@@ -181,8 +181,15 @@ class InstanceHolder:
             "Use Base Prompt" : False,
             "Use Common Prompt" : False,
             "Use Common Negative Prompt" : False,
+            "Disable Convert 'AND' to 'BREAK'" : False,
         }
         regional_prompter_base_args.update(regional_prompter_args or dict())
+        # check if other arguments are valid
+        for key in regional_prompter_base_args:
+            if key not in ["Division Mode", "Divide Ratio", "Base Ratio", "LoRA in negative textencoder",
+                           "LoRA in negative U-net", "threshold", "Use Base Prompt", "Use Common Prompt",
+                           "Use Common Negative Prompt", "Disable Convert 'AND' to 'BREAK'"]:
+                raise ValueError(f"Invalid argument {key}")
         extra_args_base.update(extra_args)
         result = instance.txt2img_task(
             # assume 3-region image
@@ -210,7 +217,7 @@ class InstanceHolder:
                         regional_prompter_base_args["Use Common Prompt"], # Use common prompt
                         regional_prompter_base_args["Use Common Negative Prompt"], # Use common negative prompt
                         "Latent", # Attention, Latent
-                        False, # disable convert 'AND' to 'BREAK'
+                        regional_prompter_base_args["Disable Convert 'AND' to 'BREAK'"], # disable convert 'AND' to 'BREAK'
                         regional_prompter_base_args["LoRA in negative textencoder"], # LoRA in negative textencoder
                         regional_prompter_base_args["LoRA in negative U-net"], # LoRA in negative U-net
                         regional_prompter_base_args["threshold"], # threshold
@@ -273,8 +280,15 @@ class InstanceHolder:
             "Use Base Prompt" : False,
             "Use Common Prompt" : False,
             "Use Common Negative Prompt" : False,
+            "Disable Convert 'AND' to 'BREAK'" : False,
         }
         regional_prompter_base_args.update(regional_prompter_args or dict())
+        # check if other arguments are valid
+        for key in regional_prompter_base_args:
+            if key not in ["Division Mode", "Divide Ratio", "Base Ratio", "LoRA in negative textencoder",
+                           "LoRA in negative U-net", "threshold", "Use Base Prompt", "Use Common Prompt",
+                           "Use Common Negative Prompt", "Disable Convert 'AND' to 'BREAK'"]:
+                raise ValueError(f"Invalid argument {key}")
         extra_args_base.update(extra_args)
         result = instance.txt2img_task(
             # assume 3-region image
@@ -302,7 +316,7 @@ class InstanceHolder:
                         regional_prompter_base_args["Use Common Prompt"], # Use common prompt
                         regional_prompter_base_args["Use Common Negative Prompt"], # Use common negative prompt
                         "Latent", # Attention, Latent
-                        False, # disable convert 'AND' to 'BREAK'
+                        regional_prompter_base_args["Disable Convert 'AND' to 'BREAK'"], # disable convert 'AND' to 'BREAK'
                         regional_prompter_base_args["LoRA in negative textencoder"], # LoRA in negative textencoder
                         regional_prompter_base_args["LoRA in negative U-net"], # LoRA in negative U-net
                         regional_prompter_base_args["threshold"], # threshold
@@ -432,14 +446,16 @@ class InstanceHolder:
             @param prompts: dictionary of prompts to test, key is the name of the prompt, value is the prompt. args_1 and args_2 shoud contain the keys of the dictionary
             @param return_images: if True, returns the images as a list, else returns None
             @param regional_prompter_args: dictionary of arguments for regional prompter, key is the name of the argument, value is the value of the argument
-                example : {
+                @example : {
                     "Division Mode" : "Horizontal", #can be 'Horizontal', 'Vertical', 'Random'
                     "Divide Ratio" : "1, 1", 
                     "Base Ratio" : "0.2", # Base prompt ratio
                     "LoRA in negative textencoder" : "0", # 0~1, default is 0
                     "LoRA in negative U-net" : "0", # 0~1, default is 0
                     "threshold" : "0", 
-                    "Use Base Prompt" : False # First prompt will be used as base prompt if True
+                    "Use Base Prompt" : False # First prompt will be used as base prompt if True,
+                    "Use Common Prompt" : False,
+                    "Use Common Negative Prompt" : False,
                 }
             @param lora_stop_steps: tuple of steps to stop LoRA at, first element is first pass stop step, second element is second pass stop step (hires)
             @param extra_args: dictionary of extra arguments for generation, such as 'seed', 'hr_scale' etc. see WebUIApi.txt2img args for more info
