@@ -1,5 +1,4 @@
-### Modified version from https://github.com/aria1th/sdwebuiapi/tree/sync-and-upload
-# The target instance should have https://github.com/aria1th/webui-model-uploader extension installed
+### reference : https://github.com/aria1th/sdwebuiapi/blob/sync-and-upload/webuiapi/webuiapi.py
 
 from collections import defaultdict
 import json
@@ -62,12 +61,16 @@ class QueuedTaskResult:
     task_id: str
     task_address: str # address to get task status
     image: str = ""# base64 encoded image
+    images: List[str] = []
     terminated: bool = False
-    cached_image: Image = None
+    cached_image: Image.Image = None
+    cached_images: List[Image.Image] = []
+    infotexts:list[str] = [] # list of infotexts for each image
     
     def __init__(self, task_id: str, task_address: str):
         self.task_id = task_id
         self.task_address = task_address
+        self.expect_rate_limit = True
 
     def get_image(self):
         self.check_finished()
@@ -77,36 +80,75 @@ class QueuedTaskResult:
             self.cached_image = Image.open(io.BytesIO(base64.b64decode(self.image.split(',')[-1])))
         return self.cached_image
     
+    def get_images(self):
+        self.check_finished()
+        if not self.terminated:
+            return None
+        if not self.cached_images: # if empty
+            self.cached_images = [Image.open(io.BytesIO(base64.b64decode(img.split(',')[-1]))) for img in self.images]
+        return self.cached_images
+    
     def is_finished(self):
+        """
+        Returns True if task is finished
+        Returns False if task is not finished
+        Throws RuntimeError if task is failed
+        Throws ValueError if task is not found
+        """
         self.check_finished()
         return self.terminated
     
-    def check_finished(self):
+    def check_finished(self, check_delay:int = 5):
+        """
+        check if task is finished
+        Throws RuntimeError if task is failed
+        Throws ValueError if task is not found
+        """
         if not self.terminated:
             # self.task_address is base address, /agent-scheduler should be added
             # check /agent-scheduler/v1/queue
             # it should return {"current_task_id" : str, "pending_tasks" : [{"api_task_id" : str}]}
             # if self.task_id is found in any of pending tasks or current_task_id, then it is not finished
             # else, find /agent-scheduler/v1/results/{task_id}
-            response = requests.get(self.task_address + "/agent-scheduler/v1/queue")
-            req_json = response.json()
-            if self.task_id == req_json["current_task_id"]:
+            response = requests.get(self.task_address + "/agent-scheduler/v1/queue") 
+            try:
+                req_json = response.json()
+            except json.JSONDecodeError as exc:
+                if self.expect_rate_limit: # if rate limit is expected, then return False
+                    return False
+                raise RuntimeError("failed to parse json from " + self.task_address + "/agent-scheduler/v1/queue" +
+                                   f", {response.status_code}, {response.text}") from exc
+            if 'current_task_id' not in req_json.keys() or 'pending_tasks' not in req_json.keys():
+                raise RuntimeError(f"Parsed json from {self.task_address + '/agent-scheduler/v1/queue'} does not contain 'current_task_id' or 'pending_tasks', {response.status_code}, {response.text}")
+            if self.task_id == req_json.get('current_task_id', None): # if current task is self.task_id, then return False
                 return False
-            elif any([self.task_id == task["api_task_id"] for task in req_json["pending_tasks"]]):
+            elif any((self.task_id == task["api_task_id"] for task in req_json["pending_tasks"])):
                 return False
             else:
+                self._wait_between_calls(check_delay)
                 result_response = requests.get(self.task_address + "/agent-scheduler/v1/results/" + self.task_id)
                 if result_response.status_code != 200:
                     raise RuntimeError(f"task id {self.task_id} is not found in queue or results, " +str(result_response.status_code), result_response.text)
-                if result_response.json().get('success', False) == False:
-                    raise RuntimeError(f"task id {self.task_id} has failed, " +str(result_response.status_code), result_response.text)
+                if not result_response.json().get('success', False):
+                    # check 'Task is pending' or 'Task is running'
+                    if result_response.json().get('message', '') == 'Task is pending' or result_response.json().get('message', '') == 'Task is running':
+                        return False
+                    elif result_response.json().get('message', '') == 'Task not found' or result_response.json().get('message', '') == 'Task result is not available':
+                        raise ValueError(f"task id {self.task_id} has failed, " +str(result_response.status_code), result_response.text)
+                    else:
+                        raise RuntimeError(f"task id {self.task_id} has failed for unknown result, " +str(result_response.status_code), result_response.text)
                 self.image = result_response.json()['data'][0]['image']
+                self.images = [img['image'] for img in result_response.json()['data']]
+                self.infotexts = [img.get('infotext') for img in result_response.json()['data']]
                 self.terminated = True
                 self.task_address = ""
                 return True
         else:
             return True
-
+        
+    def _wait_between_calls(self, seconds=1):
+        import time
+        time.sleep(seconds)
 
 class ControlNetUnit:
     def __init__(
@@ -541,6 +583,16 @@ class WebUIApi:
         else:
             response = self.session.post(url=url, json=json)
             return self._to_api_result(response)
+        
+    def resume_agent_scheduler(self):
+        # post agent-scheduler/v1/queue/resume
+        target_url = self.real_url + "/agent-scheduler/v1/queue/resume"
+        return self.session.post(target_url)
+    
+    def pause_agent_scheduler(self):
+        # post agent-scheduler/v1/queue/pause
+        target_url = self.real_url + "/agent-scheduler/v1/queue/pause"
+        return self.session.post(target_url)
 
     async def async_post(self, url, json):
         import aiohttp
@@ -624,11 +676,19 @@ class WebUIApi:
             data["path"] = dynamic_prompts_target_path
         return self.session.post(target_url, files=files, data=data)
     
-    def check_uploader_ping(self, target_api_address:str):
+    def check_uploader_ping(self, target_api_address:str = ""):
+        """
+        Checks if target_api_address is running uploader
+        
+        @param target_api_address: address of target api or empty string to check self
+        
+        @throws RuntimeError if target_api_address is not running uploader
+        """
         # ping /uploader/ping to check if uploader is running
         target_api_ping_url = target_api_address + "/uploader/ping"
         if target_api_address == "":
-            raise RuntimeError("target_api_address must be specified")
+            # check self
+            target_api_ping_url = self.real_url + "/uploader/ping"
         result = self.session.get(target_api_ping_url)
         # check response
         if result.status_code != 200:
@@ -1208,6 +1268,10 @@ class WebUIApi:
 
     def refresh_checkpoints(self):
         response = self.session.post(url=f"{self.baseurl}/refresh-checkpoints")
+        return response.json()
+    
+    def refresh_loras(self) -> None: # returns null, be careful
+        response = self.session.post(url=f"{self.baseurl}/refresh-loras")
         return response.json()
 
     def get_scripts(self):
