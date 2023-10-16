@@ -1,11 +1,18 @@
 """
 Class and functions for inference.
 """
-from typing import List, Dict, Union
-from time import sleep
 import tempfile
 import os
+import re
+import json
+import yaml
+import toml
 import requests
+from itertools import product
+from typing import List, Dict, Union
+from os import PathLike
+from time import sleep
+from PIL import Image
 from library.webuiapi import WebUIApi, ControlNetUnit, QueuedTaskResult, raw_b64_img
 from library.test_utils import open_controlnet_image
 
@@ -34,7 +41,169 @@ def recursive_convert_path_to_base64(obj:Union[List, Dict]) -> Union[List, Dict]
             raise ValueError(f"Invalid input image {obj}") from exception
     return obj
 
-class InferenceSetup:
+
+class InferenceInterface:
+    """
+    Interface for inference.
+    Implements construct_controlnet, _load_filetype
+    """
+    def __init__(self) -> None:
+        raise NotImplementedError #Should not be used
+    
+    @staticmethod
+    def construct_controlnet(controlnet_setting:dict) -> ControlNetUnit:
+        """
+        Construct a ControlNetUnit from controlnet_setting
+        
+        @param controlnet_setting: Dict containing controlnet args
+            @key input_image: str, path to input image
+            @key model: str, name of model
+            @key module: str, name of module, can be 'none'
+            @key kwargs: Dict, kwargs for ControlNetUnit
+                @example
+                    weight: float = 1,
+                    resize_mode: str = "Resize and Fill",
+                    lowvram: bool = False,
+                    processor_res: int = 512,
+                    threshold_a: float = 64,
+                    threshold_b: float = 64,
+                    guidance: float = 1,
+                    guidance_start: float = 0,
+                    guidance_end: float = 1,
+                    control_mode: int = 0,
+                    pixel_perfect: bool = False,
+                    guessmode: int = None
+
+        @return ControlNetUnit
+        """
+        # constructs and returns a ControlNetUnit
+        return ControlNetUnit(
+            input_image=controlnet_setting.get('input_image'), # str
+            model=controlnet_setting.get('model'), # str
+            module=controlnet_setting.get('module'), # str
+            **controlnet_setting.get('kwargs', {})
+        )
+    @staticmethod
+    def _load_filetype(config:Union[str, PathLike]) -> List[dict]:
+        """
+        Load config from file based on file extension.
+        Handles .txt, .json,.jsonl, .yaml, .yml, .toml
+        """
+        if not os.path.exists(config):
+            raise FileNotFoundError(f"File {config} not found")
+        if config.endswith('.txt'):
+            # load from txt file, each line is <prompt> --n <negative_prompt> --seed <seed> --width <width> --height <height>
+            # --<args> <value> is optional
+            settings = []
+            with open(config, 'r', encoding='utf-8') as file:
+                args_group = {
+                    'prompt': None,
+                    'negative_prompt': None,
+                    'seed': None,
+                    'width': None,
+                    'height': None,
+                } # match regex --<args> <value>
+                for line in file.readlines():
+                    # catch each args
+                    for key in args_group.keys():
+                        match = re.search(f"--{key} (.+?) ", line)
+                        if match:
+                            args_group[key] = match.group(1)
+                    # if line is empty, skip
+                    if not line.strip():
+                        continue
+                    # get normal prompt
+                    prompt = re.search(r"^(.+?) --", line) # match regex <prompt> --
+                    if prompt or args_group['prompt']:
+                        args_group['prompt'] = prompt.group(1)
+                        # prompt exists, add to settings
+                        settings.append(args_group.copy())
+                        continue
+        elif config.endswith('.json'):
+            # simple json file, load as json
+            with open(config, 'r', encoding='utf-8') as file:
+                settings = json.load(file)
+        elif config.endswith('.jsonl'):
+            # jsonl file, load as jsonl
+            with open(config, 'r', encoding='utf-8') as file:
+                settings = [json.loads(line) for line in file.readlines()]
+        elif config.endswith('.yaml') or config.endswith('.yml'):
+            # yaml file, load as yaml
+            with open(config, 'r', encoding='utf-8') as file:
+                settings = yaml.safe_load(file)
+        elif config.endswith('.toml'):
+            # toml file, load as toml
+            with open(config, 'r', encoding='utf-8') as file:
+                settings = toml.load(file)
+        else:
+            raise ValueError(f"Invalid config file {config}, should be .txt, .json, .jsonl, .yaml, .yml, .toml")
+        return settings
+    
+class InferenceSetupFactory(InferenceInterface):
+    """
+    class that creates InferenceSetup from config file.
+    There can be default config file, and modifiable config file, for combinational inference.
+    
+    example:
+        # this handles default config (which is for InferenceSetup config)
+        factory = InferenceSetupFactory(default_config='default_config.json', modifiable_config='modifiable_config.json')
+        factory.inference() # this will generate all possible combinations from modifiable config, then combine with default config.
+        # modifiable config handles all modifiable args, as raw string regex
+        # for example, if '$1' is found in default config, and modifiable config contains {'$1': ['1girl', '1boy']}, then it will be replaced with '1girl' and '1boy'.
+        # The factory tries to generate all possible combinations from modifiable config, then combine with default config.
+        # if prompt is not found, then it will be skipped.
+
+    """
+    def __init__(self, default_config:Union[str, PathLike], modifiable_config:Union[str, PathLike]) -> None:
+        """
+        @param default_config: Path to default config file
+        @param modifiable_config: Path to modifiable config file
+        """
+        if not os.path.exists(default_config):
+            raise FileNotFoundError(f"Default config file {default_config} not found")
+        if not os.path.exists(modifiable_config):
+            raise FileNotFoundError(f"Modifiable config file {modifiable_config} not found")
+        self.default_config_path = default_config
+        self.modifiable_config_path = modifiable_config
+
+    def generator(self) -> List['InferenceSetup']:
+        """
+        Yield all possible combinations of InferenceSetup
+        """
+        default_config = self.load_config(self.default_config_path)
+        if not isinstance(default_config, list):
+            # singletons, convert to list
+            default_config = [default_config]
+        modifiable_config = self.load_config(self.modifiable_config_path)
+        assert isinstance(modifiable_config, dict), f"Modifiable config should be dict, got {type(modifiable_config)}"
+        # keys will be 'prompt', 'negative_prompt', 'seed', 'width', 'height'... etc to work on
+        # {'prompt' : {'$1': ['1girl', '1boy']}, 'negative_prompt': {'$1': ['1girl', '1boy']}, ...} if value is string (in default config)
+        # {'seed' : [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 'width': [512, 1024, 2048], ...} if value is list (in default config)
+        # if recursive dict, then use yield from
+        # {'controlnet_args' : {'seed' : [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 'width': [512, 1024, 2048], ...}}
+        raise NotImplementedError # TODO: implement this
+        
+    def _generator_part(self, target_dict:dict, modifying_dict:dict) -> List[dict]:
+        """
+        Yield all possible combinations of target_dict with modifying_dict
+        """
+        raise NotImplementedError # TODO: implement this 
+
+    def load_config(self, config:Union[str, PathLike]) -> Union[List[Dict], Dict[str, str]]:
+        """
+        Loads config from file.
+        """
+        config_dict = {}
+        if isinstance(config, str):
+            config_dict = self._load_filetype(config)
+        elif isinstance(config, PathLike):
+            config_dict = self._load_filetype(str(config))
+        else:
+            raise ValueError(f"Invalid config {config}")
+        return config_dict
+
+    
+class InferenceSetup(InferenceInterface):
     """
     Class that loads inference setup from config file (contains prompts to test, webui address, etc.)
     """
@@ -44,7 +213,9 @@ class InferenceSetup:
         self.instance = WebUIApi(webui_addr, webui_auth)
         if webui_auth and len(webui_auth.split(':')) == 2:
             self.instance.set_auth(webui_auth.split(':')[0], webui_auth.split(':')[1])
-            
+        elif webui_auth: # invalid format, raise error
+            raise ValueError(f"Invalid webui_auth format. Should be username:password, got {webui_auth}")
+
     def inference(self, settings:List[dict], should_wait:bool = True, sleep_interval:int=5) -> List[dict]:
         """
         Inference a list of settings (per image) then return the result.
@@ -61,6 +232,30 @@ class InferenceSetup:
                 self.wait_until_finished(result_container[-1], sleep_interval)
                 pbar.update(1)
         return result_container
+  
+    def from_config(self, config:Union[str, PathLike], should_wait:bool = True, sleep_interval:int=5) -> List[dict]:
+        """
+        Load config from file then inference.
+        """
+        settings = self.load_config(config)
+        return self.inference(settings, should_wait, sleep_interval)
+
+    def load_config(self, config:Union[str, PathLike]) -> List[dict]:
+        """
+        Load config from file.
+        """
+        config_dict = {}
+        if isinstance(config, str):
+            config_dict = self._load_filetype(config)
+        elif isinstance(config, PathLike):
+            config_dict = self._load_filetype(str(config))
+        else:
+            raise ValueError(f"Invalid config {config}")
+        # if webui_addr or webui_auth is specified in config, override the one in constructor
+        if config_dict.get('webui_addr') or config_dict.get('webui_auth'):
+            new_instance = WebUIApi(config_dict.get('webui_addr', ''), config_dict.get('webui_auth', ''))
+            self.instance = new_instance
+        return config_dict.get('settings', [])
 
     def wait_until_finished(self, result:QueuedTaskResult, sleep_interval:int=5) -> None:
         """
@@ -113,39 +308,7 @@ class InferenceSetup:
         )
         return result
    
-    @staticmethod
-    def construct_controlnet(controlnet_setting:dict) -> ControlNetUnit:
-        """
-        Construct a ControlNetUnit from controlnet_setting
-        
-        @param controlnet_setting: Dict containing controlnet args
-            @key input_image: str, path to input image
-            @key model: str, name of model
-            @key module: str, name of module, can be 'none'
-            @key kwargs: Dict, kwargs for ControlNetUnit
-                @example
-                    weight: float = 1,
-                    resize_mode: str = "Resize and Fill",
-                    lowvram: bool = False,
-                    processor_res: int = 512,
-                    threshold_a: float = 64,
-                    threshold_b: float = 64,
-                    guidance: float = 1,
-                    guidance_start: float = 0,
-                    guidance_end: float = 1,
-                    control_mode: int = 0,
-                    pixel_perfect: bool = False,
-                    guessmode: int = None
 
-        @return ControlNetUnit
-        """
-        # constructs and returns a ControlNetUnit
-        return ControlNetUnit(
-            input_image=controlnet_setting.get('input_image'), # str
-            model=controlnet_setting.get('model'), # str
-            module=controlnet_setting.get('module'), # str
-            **controlnet_setting.get('kwargs', {})
-        )
 
     def pop_controlnet_args(self, setting:dict) -> List[Dict]:
         """
@@ -187,8 +350,8 @@ class InferenceSetup:
                     raise FileNotFoundError(f"File {args.get('input_image')} not found")
             if not args.get('model'):
                 raise ValueError("Model not specified")
-            if not args.get('module_args'):
-                raise ValueError("Module args not specified")
+            if not args.get('module'):
+                raise ValueError("Module not specified")
         return
 
     def process_controlnet_image_from_str(self, controlnet_args:List[Dict]) -> List[Dict]:
@@ -198,8 +361,11 @@ class InferenceSetup:
         for args in controlnet_args:
             if not args.get('input_image'):
                 continue
-            if not os.path.exists(args.get('input_image')):
-                raise FileNotFoundError(f"File {args.get('input_image')} not found")
-            args['input_image'] = open_controlnet_image(args['input_image'])
+            if isinstance(args.get('input_image'), str) and os.path.exists(args.get('input_image')):
+                args['input_image'] = open_controlnet_image(args['input_image'])
+            elif isinstance(args.get('input_image'), Image.Image):
+                pass
+            else:
+                raise ValueError(f"Invalid input image {args.get('input_image')}") # should not happen
         return controlnet_args
     

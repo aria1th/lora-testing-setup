@@ -67,10 +67,11 @@ class QueuedTaskResult:
     cached_images: List[Image.Image] = []
     infotexts:list[str] = [] # list of infotexts for each image
     
-    def __init__(self, task_id: str, task_address: str):
+    def __init__(self, task_id: str, task_address: str, session: requests.Session = None):
         self.task_id = task_id
         self.task_address = task_address
         self.expect_rate_limit = True
+        self.session = session if session else requests.Session()
 
     def get_image(self):
         self.check_finished()
@@ -110,7 +111,7 @@ class QueuedTaskResult:
             # it should return {"current_task_id" : str, "pending_tasks" : [{"api_task_id" : str}]}
             # if self.task_id is found in any of pending tasks or current_task_id, then it is not finished
             # else, find /agent-scheduler/v1/results/{task_id}
-            response = requests.get(self.task_address + "/agent-scheduler/v1/queue") 
+            response = self.session.get(self.task_address + "/agent-scheduler/v1/queue") 
             try:
                 req_json = response.json()
             except json.JSONDecodeError as exc:
@@ -126,7 +127,7 @@ class QueuedTaskResult:
                 return False
             else:
                 self._wait_between_calls(check_delay)
-                result_response = requests.get(self.task_address + "/agent-scheduler/v1/results/" + self.task_id)
+                result_response = self.session.get(self.task_address + "/agent-scheduler/v1/results/" + self.task_id)
                 if result_response.status_code != 200:
                     raise RuntimeError(f"task id {self.task_id} is not found in queue or results, " +str(result_response.status_code), result_response.text)
                 if not result_response.json().get('success', False):
@@ -284,7 +285,7 @@ class WebUIApi:
         if "task_id" in r.keys():
             # remove '/sdapi/v1' from baseurl
             task_address = self.baseurl.split('/sdapi/v1')[0]
-            return QueuedTaskResult(r["task_id"], task_address=task_address)
+            return QueuedTaskResult(r["task_id"], task_address=task_address, session=self.session)
         images = []
         if "images" in r.keys():
             images = [Image.open(io.BytesIO(base64.b64decode(i))) for i in r["images"]]
@@ -314,7 +315,7 @@ class WebUIApi:
 
         r = await response.json()
         if "task_id" in r.keys():
-            return QueuedTaskResult(r["task_id"], self.baseurl.split('/sdapi/v1')[0])
+            return QueuedTaskResult(r["task_id"], self.baseurl.split('/sdapi/v1')[0], session=self.session)
         images = []
         if "images" in r.keys():
             images = [Image.open(io.BytesIO(base64.b64decode(i))) for i in r["images"]]
