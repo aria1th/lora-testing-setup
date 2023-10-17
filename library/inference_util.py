@@ -278,7 +278,7 @@ class SimpleInferenceWithReplace:
                 break
             
     def inference_setting(self, inference_setup:SettingLike, 
-                  webui_addr:str, webui_auth:str = "") -> List[SettingLike]:
+                  webui_addr:str, webui_auth:str = "") -> List[QueuedTaskResult]:
         """
         Inference a single InferenceSetup object.
         """
@@ -291,7 +291,7 @@ class SimpleInferenceWithReplace:
         return results
     
     def inference(self, inference:List[SettingLike],
-                  webui_addr:str, webui_auth:str = "") -> List[List[SettingLike]]:
+                  webui_addr:str, webui_auth:str = "", debug:bool = False) -> List[List[QueuedTaskResult]]:
         """
         Inference a list of InferenceSetup object.
         """
@@ -305,8 +305,12 @@ class SimpleInferenceWithReplace:
                 if not new_inference_setup:
                     partial_results.append(None)
                 else:
-                    partial_results.append(inference_handler.infernce_single_setting(new_inference_setup))
-            results.append(partial_results)
+                    if debug:
+                        partial_results.append(new_inference_setup)
+                    else:
+                        partial_results.append(inference_handler.infernce_single_setting(new_inference_setup))
+            if any(result is not None for result in partial_results):
+                results.append(partial_results)
         return results
 
 class InferenceSetup(InferenceInterface):
@@ -316,7 +320,7 @@ class InferenceSetup(InferenceInterface):
     def __init__(self, webui_addr:str = "", webui_auth:str = "",
                  
                  ) -> None:
-        self.instance = WebUIApi(webui_addr, webui_auth)
+        self.instance = WebUIApi(baseurl=webui_addr)
         if webui_auth and len(webui_auth.split(':')) == 2:
             self.instance.set_auth(webui_auth.split(':')[0], webui_auth.split(':')[1])
         elif webui_auth: # invalid format, raise error
@@ -359,7 +363,9 @@ class InferenceSetup(InferenceInterface):
             raise ValueError(f"Invalid config {config}")
         # if webui_addr or webui_auth is specified in config, override the one in constructor
         if config_dict.get('webui_addr') or config_dict.get('webui_auth'):
-            new_instance = WebUIApi(config_dict.get('webui_addr', ''), config_dict.get('webui_auth', ''))
+            new_instance = WebUIApi(baseurl=config_dict.get('webui_addr', ''))
+            if config_dict.get('webui_auth', '') and len(config_dict.get('webui_auth').split(':')) == 2:
+                new_instance.set_auth(config_dict.get('webui_auth').split(':')[0], config_dict.get('webui_auth').split(':')[1])
             self.instance = new_instance
         return config_dict.get('settings', [])
 
@@ -468,6 +474,8 @@ class InferenceSetup(InferenceInterface):
                 args['input_image'] = open_controlnet_image(args['input_image'])
             elif isinstance(args.get('input_image'), Image.Image):
                 pass
-            else:
+            else: #maybe no file exists
+                if not os.path.exists(args.get('input_image')):
+                    raise FileNotFoundError(f"File {args.get('input_image')} not found")
                 raise ValueError(f"Invalid input image {args.get('input_image')}") # should not happen
         return controlnet_args
