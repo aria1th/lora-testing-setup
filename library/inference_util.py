@@ -222,6 +222,12 @@ class SimpleInferenceWithReplace:
             @key: string to replace(keys)
             @value: List of values to replace
         """
+        if isinstance(setting_json, str):
+            if os.path.exists(setting_json):
+                with open(setting_json, 'r', encoding='utf-8') as file:
+                    setting_json = json.load(file)
+            else:
+                setting_json = json.loads(setting_json)
         self.setting_json = setting_json
     
     def generator(self, inference_setup:SettingLike) -> Generator[SettingLike, None, None]:
@@ -237,7 +243,7 @@ class SimpleInferenceWithReplace:
                 if key not in inference_setup:
                     # key not found, skip
                     continue
-            raise NotImplementedError # TODO: implement this
+            raise NotImplementedError("Recursive dict is not implemented yet") # TODO: implement this
         else:
             # simply use product to generate all possible combinations
             # convert {k:[v]} to {k:[(k,v)]} for product
