@@ -9,7 +9,7 @@ import yaml
 import toml
 import requests
 from itertools import product
-from typing import List, Dict, Union
+from typing import List, Dict, Union, Generator, Any
 from os import PathLike
 from time import sleep
 from PIL import Image
@@ -41,7 +41,17 @@ def recursive_convert_path_to_base64(obj:Union[List, Dict]) -> Union[List, Dict]
             raise ValueError(f"Invalid input image {obj}") from exception
     return obj
 
-
+class SettingLike(Dict[str, Union[Dict, str, int, float]]):
+    """
+    Class that represents a setting.
+    """
+    controlnet_args: List[Dict[str, Union[str, int, float]]]
+    seed: int
+    width: int
+    height: int
+    prompt: str
+    negative_prompt: str
+    
 class InferenceInterface:
     """
     Interface for inference.
@@ -138,7 +148,7 @@ class InferenceInterface:
         else:
             raise ValueError(f"Invalid config file {config}, should be .txt, .json, .jsonl, .yaml, .yml, .toml")
         return settings
-    
+
 class InferenceSetupFactory(InferenceInterface):
     """
     class that creates InferenceSetup from config file.
@@ -202,7 +212,97 @@ class InferenceSetupFactory(InferenceInterface):
             raise ValueError(f"Invalid config {config}")
         return config_dict
 
+class SimpleInferenceWithReplace:
+    """
+    Class to handle InferenceSetup object to replace values.
+    """
+    def __init__(self, setting_json:Dict[Union[re.Pattern, str], List[str]]) -> None:
+        """
+        @param setting_json: Dict containing key:[values] to replace values
+            @key: string to replace(keys)
+            @value: List of values to replace
+        """
+        self.setting_json = setting_json
     
+    def generator(self, inference_setup:SettingLike) -> Generator[SettingLike, None, None]:
+        """
+        Yield all possible combinations of InferenceSetup
+        """
+        # Behavior will be different depends on 'recursive' key - if dict is in setting_json, flatten then search if matching keys to replace exists
+        # if not, then we can just use existing matches and use product to generate all possible combinations
+        if any(isinstance(v, dict) for v in self.setting_json):
+            # check if key is in inference_setup
+            recursive_keys = [k for k, v in self.setting_json.items() if isinstance(v, dict)]
+            for key in recursive_keys:
+                if key not in inference_setup:
+                    # key not found, skip
+                    continue
+            raise NotImplementedError # TODO: implement this
+        else:
+            # simply use product to generate all possible combinations
+            # convert {k:[v]} to {k:[(k,v)]} for product
+            setting_json = {k:[(k, v) for v in v_list] for k, v_list in self.setting_json.items()}
+            # generate all possible combinations with values
+            for combination in product(*setting_json.values()):
+                # replace values in inference_setup
+                new_inference_setup = inference_setup.copy()
+                for key, value in combination:
+                    if key not in new_inference_setup:
+                        continue
+                    new_inference_setup[key] = value
+                yield new_inference_setup
+    
+    def generator_multiple(self, inference_setups:List[SettingLike]) -> Generator[List[SettingLike], None, None]:
+        """
+        Yield all possible combinations of InferenceSetup.
+        [a, b, c, d] -> [Generator(a), Generator(b),...] would return list of new SettingLike or None object.
+        For each generator, it may yield different amount of SettingLike. This will result [SettingLike, None, SettingLike...] for example.
+        """
+        generators = [self.generator(inference_setup) for inference_setup in inference_setups]
+        # sequential yield, generate until all generators are exhausted
+        while True:
+            result_container = []
+            for generator in generators:
+                try:
+                    result_container.append(next(generator))
+                except StopIteration:
+                    result_container.append(None)
+            yield result_container
+            if all(result is None for result in result_container):
+                break
+            
+    def inference_setting(self, inference_setup:SettingLike, 
+                  webui_addr:str, webui_auth:str = "") -> List[SettingLike]:
+        """
+        Inference a single InferenceSetup object.
+        """
+        inference_handler = InferenceSetup(webui_addr, webui_auth)
+        results = []
+        for new_inference_setup in self.generator(inference_setup):
+            if not new_inference_setup:
+                continue
+            results.append(inference_handler.infernce_single_setting(new_inference_setup))
+        return results
+    
+    def inference(self, inference:List[SettingLike],
+                  webui_addr:str, webui_auth:str = "") -> List[List[SettingLike]]:
+        """
+        Inference a list of InferenceSetup object.
+        """
+        inference_handler = InferenceSetup(webui_addr, webui_auth)
+        results:List[List[Any]] = []
+        for new_inference_setups in self.generator_multiple(inference):
+            if not new_inference_setups:
+                continue
+            partial_results = []
+            for new_inference_setup in new_inference_setups:
+                if not new_inference_setup:
+                    partial_results.append(None)
+                else:
+                    partial_results.append(inference_handler.infernce_single_setting(new_inference_setup))
+            results.append(partial_results)
+        return results
+
 class InferenceSetup(InferenceInterface):
     """
     Class that loads inference setup from config file (contains prompts to test, webui address, etc.)
@@ -216,7 +316,7 @@ class InferenceSetup(InferenceInterface):
         elif webui_auth: # invalid format, raise error
             raise ValueError(f"Invalid webui_auth format. Should be username:password, got {webui_auth}")
 
-    def inference(self, settings:List[dict], should_wait:bool = True, sleep_interval:int=5) -> List[dict]:
+    def inference(self, settings:List[SettingLike], should_wait:bool = True, sleep_interval:int=5) -> List[dict]:
         """
         Inference a list of settings (per image) then return the result.
         """
@@ -266,9 +366,8 @@ class InferenceSetup(InferenceInterface):
                 break
             sleep(sleep_interval)
         return
-        
-        
-    def infernce_single_setting(self, setting:dict):
+
+    def infernce_single_setting(self, setting:SettingLike):
         """
         Inference a single setting (per image) then return the result.
         
@@ -307,10 +406,8 @@ class InferenceSetup(InferenceInterface):
             **arguments_cleared
         )
         return result
-   
 
-
-    def pop_controlnet_args(self, setting:dict) -> List[Dict]:
+    def pop_controlnet_args(self, setting:SettingLike) -> List[Dict]:
         """
         Pop controlnet args from setting dict
         Setting dict may contain 'controlnet_args' key.
@@ -368,4 +465,3 @@ class InferenceSetup(InferenceInterface):
             else:
                 raise ValueError(f"Invalid input image {args.get('input_image')}") # should not happen
         return controlnet_args
-    
