@@ -44,16 +44,22 @@ class MasaCtrlApi(WebUIApi):
         )
         # check if the request was successful
         if response.status_code != 200:
-            raise Exception(f"Request failed with status code {response.status_code}, server requires sd-webui-uploader(https://github.com/aria1th/webui-model-uploader) installed." + response.text)
+            raise ConnectionError(f"Request failed with status code {response.status_code}, server requires sd-webui-uploader(https://github.com/aria1th/webui-model-uploader) installed." + response.text)
         # parse the response
         return loads(response.text)["token_count"]
     
     def reset(self):
+        """
+        Reset the seed and masactrl_state.
+        """
         self.seed = -1
         self.masactrl_state = Status.IDLE
         self.last_generation_w_h = (0, 0)
         
     def pop_args(self, kwargs:dict):
+        """
+        Remove the masa ctrl args from kwargs.
+        """
         # pop masa ctrl args
         args_to_pop = {
             'masactrl_mode',
