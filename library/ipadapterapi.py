@@ -70,7 +70,7 @@ class IPAdapterAPI(WebUIApi):
             raise ValueError("IP Adapter API requires controlnet extension")
         if 'negpip' in scripts_list:
             # https://github.com/hako-mikan/sd-webui-negpip/issues/13
-            raise ValueError("IP Adapter API is not compatible with negpip extension")
+            print("IP Adapter API is not compatible with negpip extension")
         self.checked_compat = True
 
     def _hijack_args(self, **kwargs) -> Dict[str, Any]:
@@ -128,7 +128,7 @@ class IPAdapterAPI(WebUIApi):
         if 'base_image' in kwargs:
             self.previous_image = kwargs['base_image']
             kwargs.pop('base_image')
-        update_previous_image = kwargs.pop('update_previous_image', True)
+        update_previous_image = kwargs.pop('update_previous_image', 'base_image' not in kwargs)
         if use_task:
             func_to_use = self.txt2img_task
         else:

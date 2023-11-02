@@ -1,4 +1,5 @@
 from .webuiapi import WebUIApi, HiResUpscaler, ControlNetUnit, QueuedTaskResult
+from .ipadapterapi import IPAdapterAPI
 from typing import List
 from requests import post
 from json import loads
@@ -268,3 +269,76 @@ class MasaCtrlApi(WebUIApi):
         self.last_generation_w_h = (width, height)
         kwargs = self.pop_args(kwargs)
         return func_to_call(**kwargs)
+    
+def wait_for_task(task:QueuedTaskResult):
+    """
+    Wait for the task to finish.
+    """
+    while not task.is_finished():
+        time.sleep(1)
+    return task.get_image()
+
+class MasaCtrlAndIP(MasaCtrlApi):
+    """
+    Mutual-Self-Attention based Control API with IP Adapter API.
+    """
+    
+    def __init__(self, *args, **kwargs):
+        self.ip_adapter_api = None
+        super().__init__(*args, **kwargs)
+        
+    def attach_ip(self, ip_adapter_api:IPAdapterAPI):
+        """
+        Attach the IP Adapter API.
+        """
+        self.ip_adapter_api = ip_adapter_api
+        
+    def _common_txt2img(self, *args, **kwargs):
+        kwargs = self.ip_adapter_api._hijack_args(**kwargs)
+        return super()._common_txt2img(*args, **kwargs)
+    
+    
+    def generate_images(self, base_prompt:str = "", append_prompt_list:List[str] = [], use_task:bool=False,
+                        enable=True, # enable the masactrl, this is for debugging
+                        *args, **kwargs):
+        """
+        Generate images from text using the Mutual-Self-Attention based Control API.
+        Requires sd-webui-uploader in server side.
+            @param base_prompt: The base prompt, this will be the first prompt.
+            @param append_prompt_list: The list of prompts to append to the base prompt.
+            @param use_task: If True, it will use the task version of txt2img, else it will use the normal version. Requires Agent Scheduler in server side.
+        """
+        if use_task:
+            func_to_call = self.txt2img_task
+        else:
+            func_to_call = self.txt2img
+        # generate first image
+        copied_kwargs = kwargs.copy()
+        copied_kwargs['fixed_prompt'] = base_prompt
+        copied_kwargs['append_prompt'] = ""
+        copied_kwargs['masactrl_mode'] = Status.IDLE
+        image_base = func_to_call(*args, **copied_kwargs).images[0]
+        if use_task:
+            image_base = wait_for_task(image_base)
+        self.ip_adapter_api.previous_image = image_base # set previous image
+        length = len(append_prompt_list) # get the length of the append_prompt_list
+        # first one is LOG, next is LOGRECON as continued
+        modes = [Status.LOGGING] + [Status.LOGRECON] * (length - 1)
+        # generate the images
+        images = []
+        # if task, it returns QueuedTaskResult, else it returns the image
+        for i in range(length):
+            kwargs['masactrl_mode'] = modes[i] if enable else Status.IDLE
+            kwargs['fixed_prompt'] = base_prompt
+            kwargs['append_prompt'] = append_prompt_list[i]
+            if use_task:
+                queued_task:QueuedTaskResult = func_to_call(*args, **kwargs)
+                # wait for the task to finish because ip-adapter requires the previous image to be passed to the next image
+                image = wait_for_task(queued_task)
+                images.append(image)
+                self.ip_adapter_api.previous_image = image # set previous image
+            else:
+                image = func_to_call(*args, **kwargs).images[0] # get the first image
+                images.append(image)
+                self.ip_adapter_api.previous_image = image # set previous image
+        return images
