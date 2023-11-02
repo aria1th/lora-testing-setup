@@ -208,6 +208,9 @@ class MasaCtrlApi(WebUIApi):
         masactrl_mode = kwargs.get('masactrl_mode', Status.IDLE)
         if masactrl_mode == Status.IDLE: # use the default txt2img
             self.reset()
+            # if prompt is '', set it to fixed_prompt
+            if kwargs.get('prompt', '') == '':
+                kwargs['prompt'] = kwargs.get('fixed_prompt', '')
             kwargs = self.pop_args(kwargs)
             return func_to_call(**kwargs)
         else:
@@ -234,7 +237,7 @@ class MasaCtrlApi(WebUIApi):
             print("Masactrl mode was given but no prompt(fixed_prompt or append_prompt) was given, use the default txt2img")
             self.reset()
             kwargs = self.pop_args(kwargs)
-            return func_to_call( **kwargs)
+            return func_to_call(**kwargs)
         # fixed prompt can be just 'prompt' which is index 9
         if kwargs.get('prompt', '') != '':
             fixed_prompt = kwargs.get('prompt', '')
@@ -276,7 +279,9 @@ def wait_for_task(task:QueuedTaskResult):
     """
     while not task.is_finished():
         time.sleep(1)
-    return task.get_image()
+    image = task.get_image()
+    assert image is not None, "Image is None"
+    return image
 
 class MasaCtrlAndIP(MasaCtrlApi):
     """
@@ -314,7 +319,7 @@ class MasaCtrlAndIP(MasaCtrlApi):
             func_to_call = self.txt2img
         # generate first image
         copied_kwargs = kwargs.copy()
-        copied_kwargs['fixed_prompt'] = base_prompt
+        copied_kwargs['prompt'] = base_prompt if copied_kwargs.get('prompt', '') == '' else copied_kwargs.get('prompt', '')
         copied_kwargs['append_prompt'] = ""
         copied_kwargs['masactrl_mode'] = Status.IDLE
         image_base = func_to_call(*args, **copied_kwargs).images[0]
