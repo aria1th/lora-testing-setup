@@ -5,6 +5,10 @@ from requests import post
 from json import loads
 from random import Random
 import time
+try:
+    from tqdm import tqdm
+except (ImportError, ModuleNotFoundError):
+    tqdm = lambda x: x # dummy tqdm
 
 RandomGenerator = Random(42) # Deterministic random generator
 
@@ -332,7 +336,7 @@ class MasaCtrlAndIP(MasaCtrlApi):
         # generate the images
         images = []
         # if task, it returns QueuedTaskResult, else it returns the image
-        for i in range(length):
+        for i in tqdm(range(length)):
             kwargs['masactrl_mode'] = modes[i] if enable else Status.IDLE
             kwargs['fixed_prompt'] = base_prompt
             kwargs['append_prompt'] = append_prompt_list[i]
