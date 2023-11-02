@@ -168,7 +168,7 @@ class IPAdapterAPI(WebUIApi):
         pbar.close()
         return images
     
-    def animate(self, base_prompt:str, prompt_1:str, prompt_2:str, steps:int=10, use_task:bool=True,
+    def animate(self, base_prompt:str, prompt_1:str, prompt_2:str, steps:int=10, use_task:bool=True, filename:str="animate.gif",
                 *args, **kwargs) -> List[Image.Image]:
         """
         Generate images from prompt list
@@ -194,5 +194,5 @@ class IPAdapterAPI(WebUIApi):
         images:List[Image.Image] = self.generate_images(base_prompt, prompt_lists, use_task, *args, **kwargs)
         # animate to gif
         image_base = images[0]
-        image_base.save(f"animate_{seed}.gif", save_all=True, append_images=images[1:], duration=100, loop=0)
+        image_base.save(filename, save_all=True, append_images=images[1:], duration=100, loop=0)
         return images
