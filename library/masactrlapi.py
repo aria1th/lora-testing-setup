@@ -326,9 +326,11 @@ class MasaCtrlAndIP(MasaCtrlApi):
         copied_kwargs['prompt'] = base_prompt if copied_kwargs.get('prompt', '') == '' else copied_kwargs.get('prompt', '')
         copied_kwargs['append_prompt'] = ""
         copied_kwargs['masactrl_mode'] = Status.IDLE
-        image_base = func_to_call(*args, **copied_kwargs).images[0]
+        image_base = func_to_call(*args, **copied_kwargs)
         if use_task:
-            image_base = wait_for_task(image_base)
+            image_base = wait_for_task(image_base) # wait for the task to finish
+        else:
+            image_base = image_base.images[0] # get the first image
         self.ip_adapter_api.previous_image = image_base # set previous image
         length = len(append_prompt_list) # get the length of the append_prompt_list
         # first one is LOG, next is LOGRECON as continued
