@@ -84,6 +84,7 @@ class MasaCtrlApi(WebUIApi):
     
     def generate_images(self, base_prompt:str = "", append_prompt_list:List[str] = [], use_task:bool=True,
                         enable=True, # enable the masactrl, this is for debugging
+                        default_recon_mode : Status = Status.LOGRECON,
                         *args, **kwargs):
         """
         Generate images from text using the Mutual-Self-Attention based Control API.
@@ -98,7 +99,7 @@ class MasaCtrlApi(WebUIApi):
             func_to_call = self.txt2img
         length = len(append_prompt_list) # get the length of the append_prompt_list
         # first one is LOG, next is LOGRECON as continued
-        modes = [Status.LOGGING] + [Status.LOGRECON] * (length - 1)
+        modes = [Status.LOGGING] + [default_recon_mode] * (length - 1)
         # generate the images
         images = []
         # if task, it returns QueuedTaskResult, else it returns the image

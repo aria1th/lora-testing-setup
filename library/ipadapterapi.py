@@ -29,8 +29,27 @@ class IPAdapterAPI(WebUIApi):
         'pixel_perfect': False,
         'guessmode': None
     }
+    default_reference_controlnet_kwargs: Dict[str, Any] = {
+        'model' :"None",
+        'module' : "reference_only",
+        'weight':  1,
+        'resize_mode': "Resize and Fill",
+        'lowvram': False,
+        'processor_res': 512,
+        'threshold_a': 0.5,
+        'threshold_b': 64,
+        'guidance': 0.6,
+        'guidance_start': 0,
+        'guidance_end': 1,
+        'control_mode': 0,
+        'pixel_perfect': False,
+        'guessmode': None
+    }
 
-    def __init__(self, host="127.0.0.1", port=7860, baseurl=None, sampler="Euler a", steps=20, use_https=False, username=None, password=None, **controlnet_kwargs):
+    def __init__(self, host="127.0.0.1", port=7860, baseurl=None, sampler="Euler a", steps=20, use_https=False, username=None, password=None,
+                 use_reference_controlnet:bool=False,
+                 reference_controlnet_kwargs:Dict[str, Any]={},
+                 **controlnet_kwargs):
         """
         Initialize IP Adapter API handler
         @param (see WebUIApi.__init__)
@@ -56,6 +75,10 @@ class IPAdapterAPI(WebUIApi):
             if k not in self.ip_controlnet_args:
                 raise ValueError(f"Unknown argument {k}, allowed arguments are {list(self.ip_controlnet_args.keys())}")
         self.ip_controlnet_args.update(controlnet_kwargs)
+        self.use_reference_controlnet = use_reference_controlnet
+        self.reference_controlnet_kwargs = self.default_reference_controlnet_kwargs.copy()
+        self.reference_controlnet_kwargs.update(reference_controlnet_kwargs)
+        
 
     def _warn_incompatible(self) -> None:
         """
@@ -87,6 +110,9 @@ class IPAdapterAPI(WebUIApi):
             controlnet_module_lists = controlnet_module_lists.copy() # copy to prevent in-place modification
         controlnet_unit = ControlNetUnit(**self.ip_controlnet_args, input_image=self.previous_image)
         controlnet_module_lists.append(controlnet_unit)
+        if self.use_reference_controlnet:
+            reference_controlnet_unit = ControlNetUnit(**self.reference_controlnet_kwargs, input_image=self.previous_image)
+            controlnet_module_lists.append(reference_controlnet_unit)
         kwargs['controlnet_units'] = controlnet_module_lists # in-place append should have worked before, but for safety
         return kwargs
 
